@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a Jibo Robot",
+        "description": "Enter the details for your Jibo robot. The robot must be running the OpenJibo custom software with all ports exposed.",
+        "data": {
+          "name": "Robot Name",
+          "jibo_ip": "IP Address"
+        },
+        "data_description": {
+          "name": "A friendly name to identify this robot (e.g. Living Room Jibo).",
+          "jibo_ip": "The local IP address of the robot on your network."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "A Jibo robot with this IP address is already configured."
+    }
+  }
+}

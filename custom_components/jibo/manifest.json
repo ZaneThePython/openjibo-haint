@@ -1,11 +1,12 @@
 {
   "domain": "jibo",
   "name": "OpenJibo",
-  "version": "0.1.0.alpha.2",
+  "version": "0.1.0.3",
   "documentation": "https://jibohacks.zane.org/homeassistant/int",
   "requirements": [],
   "dependencies": [],
   "codeowners": ["@ZaneThePython"],
   "config_flow": true,
-  "iot_class": "local_polling"
+  "iot_class": "local_polling",
+  "integration_type": "device"
 }
