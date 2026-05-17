@@ -1,0 +1,7 @@
+say:
+  description: Make Jibo Say Something
+  fields:
+    message:
+      description: Text to speak
+      example: "Hello Home Assistant"
+      required: true
