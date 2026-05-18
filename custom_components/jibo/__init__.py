@@ -3,7 +3,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
 import logging
 
-from .const import DOMAIN
+from .const import DOMAIN, PLATFORMS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,13 +80,17 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
         hass.services.async_register(DOMAIN, "say", handle_say, schema=_SAY_SCHEMA)
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry):
-    hass.data[DOMAIN].pop(entry.entry_id, None)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    if not hass.data[DOMAIN]:
-        hass.services.async_remove(DOMAIN, "say")
+    if unloaded:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
 
-    return True
+        if not hass.data[DOMAIN]:
+            hass.services.async_remove(DOMAIN, "say")
+
+    return unloaded

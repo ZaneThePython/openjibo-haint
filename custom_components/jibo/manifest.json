@@ -1,7 +1,7 @@
 {
   "domain": "jibo",
   "name": "OpenJibo",
-  "version": "0.1.0.3",
+  "version": "0.1.0.4",
   "documentation": "https://jibohacks.zane.org/homeassistant/int",
   "requirements": [],
   "dependencies": [],

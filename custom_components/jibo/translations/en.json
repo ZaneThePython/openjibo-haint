@@ -17,5 +17,12 @@
     "abort": {
       "already_configured": "A Jibo robot with this IP address is already configured."
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connectivity": {
+        "name": "Online"
+      }
+    }
   }
 }
