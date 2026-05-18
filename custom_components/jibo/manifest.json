@@ -3,6 +3,7 @@
   "name": "OpenJibo",
   "version": "0.1.0.4",
   "documentation": "https://jibohacks.zane.org/homeassistant/int",
+  "issue_tracker": "https://github.com/ZaneThePython/openjibo-hacs/issues",
   "requirements": [],
   "dependencies": [],
   "codeowners": ["@ZaneThePython"],
