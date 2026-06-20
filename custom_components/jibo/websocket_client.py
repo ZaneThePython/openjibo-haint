@@ -30,9 +30,11 @@ class OpenJiboWebSocketClient:
         server_url: str,
         instance_id: str,
         on_message: MessageHandler,
+        link_id: str | None = None,
     ) -> None:
         self._server_url = server_url
         self._instance_id = instance_id
+        self._link_id = link_id
         self._on_message = on_message
         self._session: aiohttp.ClientSession | None = None
         self._ws: aiohttp.ClientWebSocketResponse | None = None
@@ -99,6 +101,7 @@ class OpenJiboWebSocketClient:
             {
                 "type": "register",
                 "instanceId": self._instance_id,
+                **({"linkId": self._link_id} if self._link_id else {}),
             }
         )
 
