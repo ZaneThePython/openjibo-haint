@@ -162,15 +162,38 @@ class JiboCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _get_jibo_area_id(self) -> str | None:
         from homeassistant.helpers import device_registry as dr
+        from homeassistant.helpers import entity_registry as er
 
         device_registry = dr.async_get(self.hass)
         device = device_registry.async_get_device(identifiers={(DOMAIN, self.entry.entry_id)})
+        if device is not None and device.area_id:
+            return device.area_id
+
+        entity_registry = er.async_get(self.hass)
+        for entity in entity_registry.entities.values():
+            if entity.config_entry_id != self.entry.entry_id or entity.platform != DOMAIN:
+                continue
+
+            area_id = self._resolve_entity_area_id(entity_registry, device_registry, entity)
+            if area_id:
+                _LOGGER.info("Resolved OpenJibo area %s from entity %s", area_id, entity.entity_id)
+                return area_id
+
         if device is None:
             _LOGGER.warning("OpenJibo device entry not found; cannot control room lights")
+        else:
+            _LOGGER.warning("OpenJibo device has no area assigned; cannot control room lights")
+        return None
+
+    def _resolve_entity_area_id(self, entity_registry, device_registry, entity) -> str | None:
+        if entity.area_id:
+            return entity.area_id
+
+        if not entity.device_id:
             return None
 
-        if not device.area_id:
-            _LOGGER.warning("OpenJibo device has no area assigned; cannot control room lights")
+        device = device_registry.async_get(entity.device_id)
+        if device is None or not device.area_id:
             return None
 
         return device.area_id
@@ -199,12 +222,19 @@ class JiboCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         entity_registry: Any,
         area_id: str | None,
     ) -> list[str]:
+        from homeassistant.helpers import device_registry as dr
+
+        device_registry = dr.async_get(self.hass)
         candidates: list[str] = []
         for entity in entity_registry.entities.values():
             if entity.domain != "light":
                 continue
-            if area_id is not None and entity.area_id != area_id:
-                continue
+
+            if area_id is not None:
+                entity_area_id = self._resolve_entity_area_id(entity_registry, device_registry, entity)
+                if entity_area_id != area_id:
+                    continue
+
             candidates.append(entity.entity_id)
         return candidates
 
