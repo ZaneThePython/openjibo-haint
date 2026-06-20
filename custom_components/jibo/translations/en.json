@@ -2,20 +2,22 @@
   "config": {
     "step": {
       "user": {
-        "title": "Add a Jibo Robot",
-        "description": "Enter the details for your Jibo robot. The robot must be running the OpenJibo custom software with all ports exposed.",
+        "title": "Connect OpenJibo",
+        "description": "Enter your OpenJibo server URL and optional local robot details. After setup, a pairing code will appear as a Home Assistant notification. Complete pairing in the OpenJibo portal.",
         "data": {
-          "name": "Robot Name",
-          "jibo_ip": "IP Address"
+          "server_url": "OpenJibo Server URL",
+          "name": "Integration Name",
+          "jibo_ip": "Robot IP Address (optional)"
         },
         "data_description": {
-          "name": "A friendly name to identify this robot (e.g. Living Room Jibo).",
-          "jibo_ip": "The local IP address of the robot on your network."
+          "server_url": "The URL of your OpenJibo server, for example http://192.168.1.10:24605.",
+          "name": "A friendly name for this OpenJibo connection.",
+          "jibo_ip": "Optional local IP for direct TTS via the jibo.say service."
         }
       }
     },
     "abort": {
-      "already_configured": "A Jibo robot with this IP address is already configured."
+      "already_configured": "This OpenJibo connection is already configured."
     }
   },
   "entity": {

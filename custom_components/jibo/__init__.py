@@ -4,7 +4,8 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 import logging
 
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_JIBO_IP, DOMAIN, PLATFORMS
+from .coordinator import JiboCoordinator
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -23,9 +24,14 @@ async def async_setup(hass: HomeAssistant, config: dict):
 
 async def async_setup_entry(hass: HomeAssistant, entry):
     hass.data.setdefault(DOMAIN, {})
+
+    coordinator = JiboCoordinator(hass, entry)
+    await coordinator.async_start()
+
     hass.data[DOMAIN][entry.entry_id] = {
-        "jibo_ip": entry.data["jibo_ip"],
+        "jibo_ip": entry.data.get(CONF_JIBO_IP, ""),
         "name": entry.data.get("name", entry.title),
+        "coordinator": coordinator,
     }
 
     if not hass.services.has_service(DOMAIN, "say"):
@@ -36,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
             targets = [
                 data["jibo_ip"]
                 for data in hass.data[DOMAIN].values()
-                if robot_filter is None or data["name"] == robot_filter
+                if data.get("jibo_ip") and (robot_filter is None or data["name"] == robot_filter)
             ]
 
             if not targets:
@@ -91,7 +97,9 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unloaded:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        entry_data = hass.data[DOMAIN].pop(entry.entry_id, None)
+        if entry_data and (coordinator := entry_data.get("coordinator")):
+            await coordinator.async_shutdown()
 
         if not hass.data[DOMAIN]:
             hass.services.async_remove(DOMAIN, "say")
