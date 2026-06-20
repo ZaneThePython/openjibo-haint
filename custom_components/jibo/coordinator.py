@@ -102,6 +102,32 @@ class JiboCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return
 
+        if message_type == "unpaired":
+            notification_id = f"{NOTIFICATION_ID_PREFIX}{self.entry.data[CONF_INSTANCE_ID]}"
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "dismiss",
+                {"notification_id": notification_id},
+            )
+
+            cleared_data = {
+                key: value
+                for key, value in self.entry.data.items()
+                if key not in {CONF_LINK_ID, CONF_JIBO_FRIENDLY_NAME}
+            }
+            self.hass.config_entries.async_update_entry(self.entry, data=cleared_data)
+            self._client.clear_link_id()
+            self.async_set_updated_data(
+                {
+                    "verification_code": None,
+                    "paired": False,
+                    "jibo_friendly_name": None,
+                    "link_id": None,
+                }
+            )
+            await self._client.force_reconnect()
+            return
+
         if message_type == "error":
             _LOGGER.error("OpenJibo server error: %s", payload.get("message"))
             return

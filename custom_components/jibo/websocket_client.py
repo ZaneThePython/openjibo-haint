@@ -73,6 +73,13 @@ class OpenJiboWebSocketClient:
 
         self._connected = False
 
+    def clear_link_id(self) -> None:
+        self._link_id = None
+
+    async def force_reconnect(self) -> None:
+        if self._ws is not None and not self._ws.closed:
+            await self._ws.close()
+
     async def _run(self) -> None:
         backoff = 1
         while not self._stop_event.is_set():
