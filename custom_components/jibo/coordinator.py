@@ -97,3 +97,35 @@ class JiboCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if message_type == "error":
             _LOGGER.error("OpenJibo server error: %s", payload.get("message"))
+            return
+
+        if message_type == "command":
+            await self._handle_command(payload.get("command"))
+            return
+
+    async def _handle_command(self, command: str | None) -> None:
+        if command == "lights_off_current_room":
+            await self._handle_lights_off_current_room()
+            return
+
+        _LOGGER.warning("OpenJibo server sent unknown command: %s", command)
+
+    async def _handle_lights_off_current_room(self) -> None:
+        from homeassistant.helpers import device_registry as dr
+
+        device_registry = dr.async_get(self.hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, self.entry.entry_id)})
+        if device is None:
+            _LOGGER.warning("OpenJibo device entry not found; cannot turn off room lights")
+            return
+
+        if not device.area_id:
+            _LOGGER.warning("OpenJibo device has no area assigned; cannot turn off room lights")
+            return
+
+        await self.hass.services.async_call(
+            "light",
+            "turn_off",
+            target={"area_id": [device.area_id]},
+        )
+        _LOGGER.info("Turned off lights in area %s for OpenJibo device", device.area_id)
