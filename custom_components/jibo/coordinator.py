@@ -18,6 +18,8 @@ from .websocket_client import OpenJiboWebSocketClient
 
 _LOGGER = logging.getLogger(__name__)
 _LIGHT_SUFFIXES = (" light", " lights", " lamp", " lamps")
+_CLIMATE_SUFFIXES = (" thermostat", " hvac", " heat", " ac")
+_DEFAULT_CLIMATE_DELTA = 2.0
 
 
 class JiboCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -154,6 +156,22 @@ class JiboCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._handle_lights_named("turn_on", payload.get("targetName"))
             return
 
+        if command == "climate_set_temperature_current_room":
+            await self._handle_climate_room_set_temp(payload.get("temperature"))
+            return
+
+        if command == "climate_set_temperature_named":
+            await self._handle_climate_named_set_temp(payload.get("targetName"), payload.get("temperature"))
+            return
+
+        if command == "climate_cool_down_current_room":
+            await self._handle_climate_room_adjust(-self._parse_delta(payload.get("delta")))
+            return
+
+        if command == "climate_warm_up_current_room":
+            await self._handle_climate_room_adjust(self._parse_delta(payload.get("delta")))
+            return
+
         _LOGGER.warning("OpenJibo server sent unknown command: %s", command)
 
     async def _handle_lights_room(self, service: str) -> None:
@@ -185,6 +203,94 @@ class JiboCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             {"entity_id": entity_id},
         )
         _LOGGER.info("Called light.%s for entity %s (target %r)", service, entity_id, target_name)
+
+    async def _handle_climate_room_set_temp(self, temperature: Any) -> None:
+        parsed_temperature = self._parse_temperature(temperature)
+        if parsed_temperature is None:
+            _LOGGER.warning("OpenJibo climate set command missing valid temperature")
+            return
+
+        area_id = self._get_jibo_area_id()
+        if area_id is None:
+            return
+
+        await self.hass.services.async_call(
+            "climate",
+            "set_temperature",
+            {"temperature": parsed_temperature},
+            target={"area_id": [area_id]},
+        )
+        _LOGGER.info("Called climate.set_temperature for area %s to %s", area_id, parsed_temperature)
+
+    async def _handle_climate_named_set_temp(self, target_name: str | None, temperature: Any) -> None:
+        if not target_name:
+            _LOGGER.warning("OpenJibo named climate command missing targetName")
+            return
+
+        parsed_temperature = self._parse_temperature(temperature)
+        if parsed_temperature is None:
+            _LOGGER.warning("OpenJibo named climate command missing valid temperature")
+            return
+
+        area_id = self._get_jibo_area_id()
+        entity_id = self._find_matching_climate(target_name, area_id)
+        if entity_id is None:
+            _LOGGER.warning("No climate entity matched target %r", target_name)
+            return
+
+        await self.hass.services.async_call(
+            "climate",
+            "set_temperature",
+            {"entity_id": entity_id, "temperature": parsed_temperature},
+        )
+        _LOGGER.info(
+            "Called climate.set_temperature for entity %s to %s (target %r)",
+            entity_id,
+            parsed_temperature,
+            target_name,
+        )
+
+    async def _handle_climate_room_adjust(self, delta: float) -> None:
+        from homeassistant.helpers import entity_registry as er
+
+        area_id = self._get_jibo_area_id()
+        if area_id is None:
+            return
+
+        entity_ids = self._list_climate_entity_ids(er.async_get(self.hass), area_id)
+        if not entity_ids:
+            _LOGGER.warning("No climate entities found for area %s", area_id)
+            return
+
+        for entity_id in entity_ids:
+            await self._adjust_climate_entity(entity_id, delta)
+
+    async def _adjust_climate_entity(self, entity_id: str, delta: float) -> None:
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in {"unavailable", "unknown"}:
+            _LOGGER.warning("Climate entity %s unavailable for adjustment", entity_id)
+            return
+
+        current = state.attributes.get("temperature")
+        if current is None:
+            _LOGGER.warning("Climate entity %s has no setpoint to adjust", entity_id)
+            return
+
+        min_temp = state.attributes.get("min_temp")
+        max_temp = state.attributes.get("max_temp")
+        new_temp = float(current) + delta
+
+        if min_temp is not None:
+            new_temp = max(float(min_temp), new_temp)
+        if max_temp is not None:
+            new_temp = min(float(max_temp), new_temp)
+
+        await self.hass.services.async_call(
+            "climate",
+            "set_temperature",
+            {"entity_id": entity_id, "temperature": new_temp},
+        )
+        _LOGGER.info("Adjusted climate entity %s from %s to %s", entity_id, current, new_temp)
 
     def _get_jibo_area_id(self) -> str | None:
         from homeassistant.helpers import device_registry as dr
@@ -287,12 +393,105 @@ class JiboCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return exact_match or partial_match
 
+    def _find_matching_climate(self, target_name: str, area_id: str | None) -> str | None:
+        from homeassistant.helpers import entity_registry as er
+
+        entity_registry = er.async_get(self.hass)
+        normalized_target = _normalize_climate_name(target_name)
+        if not normalized_target:
+            return None
+
+        area_candidates = self._list_climate_entity_ids(entity_registry, area_id)
+        match = self._match_climate_entity(normalized_target, area_candidates)
+        if match is not None:
+            return match
+
+        if area_id is not None:
+            all_candidates = self._list_climate_entity_ids(entity_registry, None)
+            return self._match_climate_entity(normalized_target, all_candidates)
+
+        return None
+
+    def _list_climate_entity_ids(
+        self,
+        entity_registry: Any,
+        area_id: str | None,
+    ) -> list[str]:
+        from homeassistant.helpers import device_registry as dr
+
+        device_registry = dr.async_get(self.hass)
+        candidates: list[str] = []
+        for entity in entity_registry.entities.values():
+            if entity.domain != "climate":
+                continue
+
+            if area_id is not None:
+                entity_area_id = self._resolve_entity_area_id(entity_registry, device_registry, entity)
+                if entity_area_id != area_id:
+                    continue
+
+            candidates.append(entity.entity_id)
+        return candidates
+
+    def _match_climate_entity(self, normalized_target: str, entity_ids: list[str]) -> str | None:
+        exact_match: str | None = None
+        partial_match: str | None = None
+
+        for entity_id in entity_ids:
+            state = self.hass.states.get(entity_id)
+            friendly_name = state.name if state is not None else entity_id
+            normalized_friendly = _normalize_climate_name(friendly_name)
+            if not normalized_friendly:
+                continue
+
+            if normalized_friendly == normalized_target:
+                exact_match = entity_id
+                break
+
+            if (
+                normalized_target in normalized_friendly
+                or normalized_friendly in normalized_target
+            ) and partial_match is None:
+                partial_match = entity_id
+
+        return exact_match or partial_match
+
+    @staticmethod
+    def _parse_temperature(value: Any) -> float | None:
+        if value is None:
+            return None
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _parse_delta(value: Any) -> float:
+        if value is None:
+            return _DEFAULT_CLIMATE_DELTA
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return _DEFAULT_CLIMATE_DELTA
+
 
 def _normalize_light_name(value: str) -> str:
     normalized = value.lower().strip()
     normalized = normalized.replace("'", "").replace("’", "")
     normalized = re.sub(r"\s+", " ", normalized)
     for suffix in _LIGHT_SUFFIXES:
+        if normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)].strip()
+    return normalized
+
+
+def _normalize_climate_name(value: str) -> str:
+    normalized = value.lower().strip()
+    normalized = normalized.replace("'", "").replace("’", "")
+    normalized = re.sub(r"\s+", " ", normalized)
+    for suffix in _CLIMATE_SUFFIXES:
         if normalized.endswith(suffix):
             normalized = normalized[: -len(suffix)].strip()
     return normalized
